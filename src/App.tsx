@@ -48,14 +48,14 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-col min-h-full lg:h-full lg:min-h-0">
         <Header onHelp={() => setHelp(true)} />
         <main
-          className="flex-1 min-h-0 grid gap-px bg-border overflow-auto lg:overflow-hidden
+          className="flex-1 grid gap-px bg-border lg:min-h-0 lg:overflow-hidden
                      grid-cols-1 lg:grid-cols-[minmax(300px,22rem)_minmax(0,1fr)_minmax(300px,22rem)]"
         >
           {/* Source editor and machine-code listing */}
-          <section aria-label="Program" className="order-3 lg:order-1 bg-panel flex flex-col min-h-0 h-[32rem] lg:h-auto">
+          <section aria-label="Program" className="order-3 lg:order-1 bg-panel flex flex-col h-[32rem] lg:h-auto lg:min-h-0">
             <Tabs defaultValue="code" className="flex flex-col flex-1 min-h-0">
               <TabsList>
                 <TabsTrigger value="code">Code</TabsTrigger>
@@ -70,8 +70,8 @@ export default function App() {
           </section>
 
           {/* Datapath, narration and transport */}
-          <section aria-label="Datapath" className="order-1 lg:order-2 bg-panel flex flex-col min-h-0">
-            <div className="relative flex-1 min-h-[18rem] sm:min-h-[24rem]">
+          <section aria-label="Datapath" className="order-1 lg:order-2 bg-panel flex flex-col lg:min-h-0">
+            <div className="relative h-[62vw] min-h-56 lg:h-auto lg:flex-1 lg:min-h-[24rem]">
               <Suspense fallback={<div className="absolute inset-0 grid place-items-center text-sm text-muted">Loading datapath…</div>}>
                 <Datapath theme={theme} />
               </Suspense>
@@ -86,7 +86,7 @@ export default function App() {
           </section>
 
           {/* State inspectors */}
-          <section aria-label="Processor state" className="order-2 lg:order-3 bg-panel flex flex-col min-h-0 h-[32rem] lg:h-auto">
+          <section aria-label="Processor state" className="order-2 lg:order-3 bg-panel flex flex-col h-[32rem] lg:h-auto lg:min-h-0">
             <Tabs defaultValue="regs" className="flex flex-col flex-1 min-h-0">
               <TabsList>
                 <TabsTrigger value="regs">Registers</TabsTrigger>

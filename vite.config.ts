@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  build: { chunkSizeWarningLimit: 1200 },
   test: {
     include: ["src/**/*.test.ts"],
     environment: "node",

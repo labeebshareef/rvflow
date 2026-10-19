@@ -154,7 +154,10 @@ export function Editor() {
             ...historyKeymap,
           ]),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged) useSim.getState().setSource(u.state.doc.toString());
+            if (!u.docChanged) return;
+            const text = u.state.doc.toString();
+            // Ignore the echo of a document replaced from the store (e.g. loading a lesson).
+            if (text !== useSim.getState().source) useSim.getState().setSource(text);
           }),
           EditorView.contentAttributes.of({ "aria-label": "RISC-V assembly source" }),
         ],

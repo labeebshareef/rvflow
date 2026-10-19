@@ -6,7 +6,8 @@ import { find } from "@/sim/trace";
 import { cpu, currentRecord, memWritePending, useSim } from "@/store/sim";
 import { Button } from "./components/button";
 
-const ROWS = 16;
+const COLS = 8;
+const ROWS = 32;
 
 export function Memory() {
   const s = useSim();
@@ -62,22 +63,22 @@ export function Memory() {
       <p className="px-3 py-1.5 text-[11px] text-muted border-b border-border">
         Byte-addressed, little-endian: the word 0x12345678 is stored as <span className="font-mono">78 56 34 12</span>.
       </p>
-      <table className="w-full font-mono text-[11px]" key={s.version + (pending ? "p" : "")}>
+      <table className="font-mono text-[11px]" key={s.version + (pending ? "p" : "")}>
         <thead>
           <tr className="text-muted">
             <th className="text-left font-normal pl-3 py-1">address</th>
-            {Array.from({ length: 16 }, (_, i) => (
-              <th key={i} className={cn("font-normal w-5", i % 4 === 0 && "pl-1.5")}>{i.toString(16).toUpperCase()}</th>
+            {Array.from({ length: COLS }, (_, i) => (
+              <th key={i} className={cn("font-normal w-6", i % 4 === 0 && "pl-2")}>+{i}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {Array.from({ length: ROWS }, (_, r) => {
-            const rowAddr = (base + r * 16) >>> 0;
+            const rowAddr = (base + r * COLS) >>> 0;
             return (
               <tr key={r} className="border-t border-border/40">
-                <td className="pl-3 py-0.5 text-muted">{hex32(rowAddr).slice(2)}</td>
-                {Array.from({ length: 16 }, (_, i) => {
+                <td className="pl-3 py-0.5 text-muted">{hex32(rowAddr)}</td>
+                {Array.from({ length: COLS }, (_, i) => {
                   const a = (rowAddr + i) >>> 0;
                   const b = byteAt(a);
                   const hit = touched && a >= touched.addr && a < touched.addr + touched.size;
@@ -87,7 +88,7 @@ export function Memory() {
                       key={i}
                       className={cn(
                         "text-center",
-                        i % 4 === 0 && "pl-1.5",
+                        i % 4 === 0 && "pl-2",
                         b === 0 && "text-muted/60",
                         hit && (mw ? (pending ? "bg-warn/20" : "bg-ok/25 text-fg") : "bg-f-rs1/25 text-fg"),
                         isSp && "underline decoration-f-funct7",
