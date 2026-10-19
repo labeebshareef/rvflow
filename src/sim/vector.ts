@@ -219,8 +219,9 @@ export function execVector(cpu: Cpu, d: Decoded, ev: MicroEvent[]): void {
   const isRed = def.mnemonic.startsWith("vred");
   const dGroup = isCompare || isRed || op === "MVSX" ? 1 : lmul;
   aligned(f.vd, dGroup, "destination");
-  aligned(vs2, lmul, "source");
-  if (def.layout === "OPVV" && !isRed) aligned(f.vs1, lmul, "source");
+  const toks = def.syntax.split(",");
+  if (toks.includes("vs2")) aligned(vs2, lmul, "source");
+  if (toks.includes("vs1") && !isRed) aligned(f.vs1, lmul, "source");
   if (vm === 0 && f.vd === 0 && !isCompare && op !== "MERGE") ill("a masked instruction cannot write the mask register v0");
   if (op === "SLIDEUP" && f.vd === vs2) ill("vslideup destination must not overlap the source");
 

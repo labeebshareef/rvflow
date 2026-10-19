@@ -411,7 +411,8 @@ export class Cpu {
     const toS = this.priv <= 1 && ((deleg >>> cause) & 1) === 1;
     const tvec = this.raw(toS ? 0x105 : 0x305);
     const name = interrupt ? INTERRUPTS[cause] ?? `interrupt ${cause}` : CAUSES[cause] ?? `cause ${cause}`;
-    if (this.opts.env === "rars" && !toS && (tvec & ~3) === 0) {
+    // Linux user mode has no trap handler (the kernel would send a signal); rars without mtvec has none either.
+    if (this.opts.env === "linux" || (this.opts.env === "rars" && !toS && (tvec & ~3) === 0)) {
       this.events.push({ kind: "TRAP", cause, interrupt, name, tval, message });
       return false;
     }
