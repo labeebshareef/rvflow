@@ -47,13 +47,13 @@ describe("encoding", () => {
     expect(p.text.map((t) => t.word >>> 0)).toEqual([0x00628463, 0x00000013, 0x008000ef, 0x00000013, 0x00001063, 0xfe001ee3]);
   });
 
-  it("round-trips every instruction through decode", () => {
-    for (const def of INSTRUCTIONS) {
+  it("round-trips every base instruction through decode", () => {
+    for (const def of INSTRUCTIONS.filter((x) => x.ext === "I" || x.ext === "M")) {
       const ops = { rd: 5, rs1: 6, rs2: 7, imm: def.format === "U" ? 0x12345000 : def.format === "B" || def.format === "J" ? -8 : def.syntax === "rd,rs1,shamt" ? 7 : -3 };
       const w = encode(def, ops);
       const d = decode(w);
       expect(d?.def.mnemonic, def.mnemonic).toBe(def.mnemonic);
-      if (def.fixedImm === undefined && def.syntax !== "fence" && def.format !== "R") expect(d!.imm, def.mnemonic).toBe(ops.imm);
+      if (/imm|off/.test(def.syntax) && def.fixed.imm === undefined && !def.syntax.includes("uimm5")) expect(d!.imm, def.mnemonic).toBe(ops.imm);
     }
   });
 

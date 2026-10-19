@@ -12,15 +12,17 @@ export interface Control {
   ALUOp: string | null;
   MemRead: boolean;
   MemWrite: boolean;
-  WBSel: "alu" | "mem" | "pc4" | null;
+  WBSel: "alu" | "mem" | "pc4" | "csr" | "fpu" | null;
   /** Static PC source; branches resolve at run time. */
-  PCSel: "pc4" | "branch" | "jal" | "jalr" | "trap";
+  PCSel: "pc4" | "branch" | "jal" | "jalr" | "trap" | "xret";
   Branch: boolean;
+  /** Writes the FP register file. */
+  FPWrite: boolean;
 }
 
 const C = (c: Partial<Control>): Control => ({
   RegWrite: false, ImmSel: null, ALUSrcA: null, ALUSrcB: null, ALUOp: null,
-  MemRead: false, MemWrite: false, WBSel: null, PCSel: "pc4", Branch: false, ...c,
+  MemRead: false, MemWrite: false, WBSel: null, PCSel: "pc4", Branch: false, FPWrite: false, ...c,
 });
 
 const BY_CLASS: Record<AnimClass, (d: InstrDef) => Control> = {
@@ -37,6 +39,22 @@ const BY_CLASS: Record<AnimClass, (d: InstrDef) => Control> = {
   AUIPC: () => C({ RegWrite: true, ImmSel: "U", ALUSrcA: "pc", ALUSrcB: "imm", ALUOp: "ADD", WBSel: "alu" }),
   SYSTEM: () => C({ PCSel: "trap" }),
   FENCE: () => C({}),
+  CSR: () => C({ RegWrite: true, ALUSrcA: "rs1", ALUOp: "CSR", WBSel: "csr" }),
+  PRIV: (d) => C({ PCSel: d.op === "mret" || d.op === "sret" ? "xret" : "pc4" }),
+  AMO: (d) => C({ RegWrite: true, ALUSrcA: "rs1", ALUOp: `AMO.${d.op}`, MemRead: true, MemWrite: true, WBSel: "mem" }),
+  LR: () => C({ RegWrite: true, ALUSrcA: "rs1", ALUOp: "ADD", MemRead: true, WBSel: "mem" }),
+  SC: () => C({ RegWrite: true, ALUSrcA: "rs1", ALUOp: "ADD", MemWrite: true, WBSel: "mem" }),
+  FP_LOAD: () => C({ ImmSel: "I", ALUSrcA: "rs1", ALUSrcB: "imm", ALUOp: "ADD", MemRead: true, WBSel: "mem", FPWrite: true }),
+  FP_STORE: () => C({ ImmSel: "S", ALUSrcA: "rs1", ALUSrcB: "imm", ALUOp: "ADD", MemWrite: true }),
+  FP_OP: (d) => C({ ALUOp: `FPU.${d.op}`, FPWrite: true }),
+  FP_FMA: (d) => C({ ALUOp: `FPU.${d.mnemonic.split(".")[0].toUpperCase()}`, FPWrite: true }),
+  FP_CMP: (d) => C({ RegWrite: true, ALUOp: `FPU.${d.op}`, WBSel: "fpu" }),
+  FP_TO_INT: (d) => C({ RegWrite: true, ALUOp: `FPU.${d.op}`, WBSel: "fpu" }),
+  INT_TO_FP: (d) => C({ ALUOp: `FPU.${d.op}`, FPWrite: true }),
+  VSET: () => C({ RegWrite: true, ALUOp: "VSET", WBSel: "alu" }),
+  V_LOAD: () => C({ ALUOp: "VLSU", MemRead: true }),
+  V_STORE: () => C({ ALUOp: "VLSU", MemWrite: true }),
+  V_ARITH: (d) => C({ ALUOp: `VEC.${d.op}`, RegWrite: d.syntax.startsWith("rd") }),
 };
 
 export function controlFor(def: InstrDef): Control {
@@ -45,7 +63,7 @@ export function controlFor(def: InstrDef): Control {
 
 /** Ordered list of the signals shown in the Control panel. */
 export const CONTROL_SIGNALS: (keyof Control)[] = [
-  "RegWrite", "ImmSel", "ALUSrcA", "ALUSrcB", "ALUOp", "MemRead", "MemWrite", "WBSel", "PCSel", "Branch",
+  "RegWrite", "ImmSel", "ALUSrcA", "ALUSrcB", "ALUOp", "MemRead", "MemWrite", "WBSel", "PCSel", "Branch", "FPWrite",
 ];
 
 export const CONTROL_HELP: Record<keyof Control, string> = {
@@ -56,7 +74,8 @@ export const CONTROL_HELP: Record<keyof Control, string> = {
   ALUOp: "Operation the ALU (or branch comparator) performs.",
   MemRead: "Data memory read enable (loads).",
   MemWrite: "Data memory write enable (stores).",
-  WBSel: "What is written back to rd: ALU result, loaded data or PC+4.",
-  PCSel: "Where the next PC comes from: PC+4, branch target, jump target, or trap.",
+  WBSel: "What is written back to rd: ALU result, loaded data, PC+4, a CSR value or an FPU result.",
+  PCSel: "Where the next PC comes from: PC+4, branch target, jump target, trap vector or mepc/sepc (xret).",
   Branch: "The comparator decides whether the branch is taken.",
+  FPWrite: "Enables the FP register file write port (F/D instructions).",
 };
