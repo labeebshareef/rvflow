@@ -6,7 +6,11 @@
 
 export type UnitId =
   | "pcmux" | "pc" | "pc4" | "imem" | "control" | "regfile" | "immgen"
-  | "muxA" | "muxB" | "cmp" | "alu" | "target" | "dmem" | "wbmux";
+  | "muxA" | "muxB" | "cmp" | "alu" | "target" | "dmem" | "wbmux"
+  | "csr" | "rvc" | "fpregs" | "fpu" | "vregs" | "vlanes";
+
+/** Optional parts of the board, shown only when the program needs them. */
+export type Feature = "rvc" | "fp" | "vec";
 
 export interface UnitDef {
   id: UnitId;
@@ -17,6 +21,7 @@ export interface UnitDef {
   w: number;
   h: number;
   kind: "block" | "mux" | "adder" | "alu" | "memory" | "control";
+  feature?: Feature;
 }
 
 export const UNITS: UnitDef[] = [
@@ -34,6 +39,12 @@ export const UNITS: UnitDef[] = [
   { id: "target", label: "PC + imm", x: 4.5, y: -5, w: 1.8, h: 1.2, kind: "adder" },
   { id: "dmem", label: "Data", sub: "Memory", x: 8.5, y: 0, w: 2.8, h: 3.2, kind: "memory" },
   { id: "wbmux", label: "WB", sub: "mux", x: 12, y: 0, w: 0.8, h: 2.4, kind: "mux" },
+  { id: "csr", label: "CSR File", sub: "mstatus mepc", x: -2.5, y: 4.8, w: 2.2, h: 1.1, kind: "block" },
+  { id: "rvc", label: "Expand", x: -7.5, y: 3.0, w: 1.6, h: 0.7, kind: "block", feature: "rvc" },
+  { id: "fpregs", label: "FP Regs", sub: "f0-f31", x: -6.5, y: -11, w: 2.8, h: 2, kind: "block", feature: "fp" },
+  { id: "fpu", label: "FPU", sub: "IEEE 754", x: -1.5, y: -11, w: 2.4, h: 2, kind: "alu", feature: "fp" },
+  { id: "vregs", label: "Vector Regs", sub: "v0-v31", x: 4.5, y: -11, w: 2.8, h: 2, kind: "block", feature: "vec" },
+  { id: "vlanes", label: "Vector ALU", sub: "lanes", x: 9.5, y: -11, w: 2.8, h: 2, kind: "alu", feature: "vec" },
 ];
 
 export const UNIT_BY_ID = new Map(UNITS.map((u) => [u.id, u]));
@@ -44,13 +55,17 @@ export type WireId =
   | "regfile->muxA" | "regfile->muxB" | "regfile->cmp1" | "regfile->cmp2" | "regfile->dmem"
   | "immgen->muxB" | "immgen->target"
   | "muxA->alu" | "muxB->alu" | "alu->dmem" | "alu->wbmux" | "alu->pcmux"
-  | "dmem->wbmux" | "wbmux->regfile" | "target->pcmux" | "cmp->pcmux" | "pcmux->pc";
+  | "dmem->wbmux" | "wbmux->regfile" | "target->pcmux" | "cmp->pcmux" | "pcmux->pc"
+  | "regfile->csr" | "csr->wbmux" | "csr->pcmux"
+  | "imem->fpregs" | "fpregs->fpu" | "fpu->fpregs" | "regfile->fpu" | "fpu->wbmux" | "dmem->fpregs" | "fpregs->dmem"
+  | "regfile->vlanes" | "vregs->vlanes" | "vlanes->vregs" | "dmem->vregs" | "vregs->dmem" | "vlanes->wbmux";
 
 export interface WireDef {
   id: WireId;
   points: [number, number][];
   /** Control wires are thinner and dashed. */
   control?: boolean;
+  feature?: Feature;
 }
 
 export const WIRES: WireDef[] = [
@@ -80,11 +95,39 @@ export const WIRES: WireDef[] = [
   { id: "target->pcmux", points: [[5.4, -5], [6.2, -5], [6.2, -7.3], [-14, -7.3], [-14, -0.3], [-13.4, -0.3]] },
   { id: "cmp->pcmux", points: [[1.5, 4.6], [1.5, 6.4], [-12.7, 6.4], [-12.7, 1.2]], control: true },
   { id: "pcmux->pc", points: [[-12.6, 0], [-11.8, 0]] },
+  // CSR file: rs1/uimm in, old value out to write-back, trap vector / mepc out to the PC mux.
+  { id: "regfile->csr", points: [[-2.5, 1.8], [-2.5, 4.25]] },
+  { id: "csr->wbmux", points: [[-1.4, 4.8], [-1.0, 4.8], [-1.0, 5.9], [10.8, 5.9], [10.8, 0.3], [11.6, 0.3]] },
+  { id: "csr->pcmux", points: [[-3.2, 5.35], [-3.2, 5.95], [-15, 5.95], [-15, 0.3], [-13.4, 0.3]] },
+  // FP lane
+  { id: "imem->fpregs", points: [[-7.2, -1.6], [-7.2, -10]], feature: "fp" },
+  { id: "fpregs->fpu", points: [[-5.1, -10.8], [-2.7, -10.8]], feature: "fp" },
+  { id: "fpu->fpregs", points: [[-1.5, -12], [-1.5, -12.6], [-6.5, -12.6], [-6.5, -12]], feature: "fp" },
+  { id: "regfile->fpu", points: [[-3.9, -1.2], [-4.3, -1.2], [-4.3, -9.8], [-2.2, -9.8], [-2.2, -10]], feature: "fp" },
+  { id: "fpu->wbmux", points: [[-0.6, -10], [-0.6, -9.05], [12, -9.05], [12, -1.2]], feature: "fp" },
+  { id: "dmem->fpregs", points: [[9.0, -1.6], [9.0, -9.35], [-6.0, -9.35], [-6.0, -10]], feature: "fp" },
+  { id: "fpregs->dmem", points: [[-5.5, -10], [-5.5, -9.65], [9.4, -9.65], [9.4, -1.6]], feature: "fp" },
+  // Vector lane
+  { id: "dmem->vregs", points: [[7.6, -1.6], [7.6, -8.45], [4.0, -8.45], [4.0, -10]], feature: "vec" },
+  { id: "vregs->dmem", points: [[5.0, -10], [5.0, -8.75], [8.0, -8.75], [8.0, -1.6]], feature: "vec" },
+  { id: "regfile->vlanes", points: [[-3.9, -1.5], [-4.6, -1.5], [-4.6, -9.95], [10.4, -9.95], [10.4, -10]], feature: "vec" },
+  { id: "vregs->vlanes", points: [[5.9, -11], [8.1, -11]], feature: "vec" },
+  { id: "vlanes->vregs", points: [[9.5, -12], [9.5, -12.6], [4.5, -12.6], [4.5, -12]], feature: "vec" },
+  { id: "vlanes->wbmux", points: [[10.9, -10.6], [12.3, -10.6], [12.3, -1.2]], feature: "vec" },
 ];
 
 export const WIRE_BY_ID = new Map(WIRES.map((w) => [w.id, w]));
 
 export const BOARD_BOUNDS = { minX: -15.5, maxX: 14.2, minY: -9, maxY: 8.2 };
+
+/** Board extent for the features in use (the FP/vector lane adds a row below). */
+export function boardBounds(features: Set<Feature>): typeof BOARD_BOUNDS {
+  return features.has("fp") || features.has("vec") ? { ...BOARD_BOUNDS, minY: -13.4 } : BOARD_BOUNDS;
+}
+
+export function visible<T extends { feature?: Feature }>(items: T[], features: Set<Feature>): T[] {
+  return items.filter((i) => !i.feature || features.has(i.feature));
+}
 
 /** Total polyline length. */
 export function wireLength(points: [number, number][]): number {

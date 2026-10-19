@@ -3,14 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Animated inside-the-processor RISC-V (RV32IM) learning app",
+  "description": "Animated inside-the-processor RISC-V learning app (RV32IMAFDC + B + V subset, privilege modes, pipeline and caches)",
   "scripts": {
     "dev": "vite",
     "build": "tsc -p . && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen:golden": "node scripts/gen-golden.mjs",
+    "gen:riscv-tests": "scripts/build-riscv-tests.sh",
+    "gen:difftests": "node scripts/gen-difftests.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

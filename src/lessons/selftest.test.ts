@@ -11,7 +11,7 @@ describe("self-test program", () => {
     expect(p.errors).toEqual([]);
     const cpu = new Cpu();
     cpu.reset(p.entry);
-    for (const t of p.text) cpu.mem.write(t.addr, 4, t.word);
+    for (const t of p.text) cpu.mem.write(t.addr, t.size, t.word);
     cpu.mem.load(p.dataBase, p.data);
     cpu.textEnd = p.textEnd;
     let steps = 0;

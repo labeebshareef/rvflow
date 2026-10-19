@@ -1,8 +1,9 @@
-import { Cpu as CpuIcon, Hammer, Keyboard, Link2, Moon, Sun } from "lucide-react";
-import { useState } from "react";
+import { Cpu as CpuIcon, FileUp, Hammer, Keyboard, Link2, Moon, Sun } from "lucide-react";
+import { useRef, useState } from "react";
 import { EXAMPLES } from "@/lessons/examples";
 import { encodeShare, useSim } from "@/store/sim";
 import { Button } from "./components/button";
+import { ToggleGroup } from "./components/toggle-group";
 import { Tooltip } from "./components/tooltip";
 
 const CHAPTERS = [...new Set(EXAMPLES.map((e) => e.chapter))];
@@ -10,6 +11,7 @@ const CHAPTERS = [...new Set(EXAMPLES.map((e) => e.chapter))];
 export function Header({ onHelp }: { onHelp: () => void }) {
   const s = useSim();
   const [copied, setCopied] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const example = EXAMPLES.find((e) => e.id === s.exampleId);
 
   const share = async () => {
@@ -53,7 +55,7 @@ export function Header({ onHelp }: { onHelp: () => void }) {
           }}
           className="h-8 max-w-[16rem] rounded-md border border-border bg-panel-2 px-2 text-xs text-fg"
         >
-          {s.exampleId === null && <option value="">Your program</option>}
+          {s.exampleId === null && <option value="">{s.elfName ?? "Your program"}</option>}
           {CHAPTERS.map((c) => (
             <optgroup key={c} label={c}>
               {EXAMPLES.filter((e) => e.chapter === c).map((e) => (
@@ -63,9 +65,33 @@ export function Header({ onHelp }: { onHelp: () => void }) {
           ))}
         </select>
       </label>
-      {example && <p className="text-xs text-muted hidden xl:block max-w-md truncate" title={example.blurb}>{example.blurb}</p>}
+      {example && <p className="text-xs text-muted hidden min-[1760px]:block max-w-md truncate" title={example.blurb}>{example.blurb}</p>}
+
+      <ToggleGroup
+        label="Processor implementation"
+        value={s.arch}
+        onChange={(a) => s.setArch(a)}
+        options={[{ value: "single", label: "Single-cycle" }, { value: "multi", label: "Multi-cycle" }, { value: "pipeline", label: "Pipeline" }]}
+      />
 
       <div className="ml-auto flex items-center gap-1.5">
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".elf,application/octet-stream"
+          className="hidden"
+          aria-label="Open a RISC-V ELF file"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (f) s.loadElf(new Uint8Array(await f.arrayBuffer()), f.name);
+            e.target.value = "";
+          }}
+        />
+        <Tooltip content="Run a 32-bit RISC-V ELF (e.g. one of tests/riscv-tests) instead of the editor's source">
+          <Button size="sm" onClick={() => fileRef.current?.click()}>
+            <FileUp size={14} /> ELF
+          </Button>
+        </Tooltip>
         <Tooltip content="Assemble and load (Ctrl/⌘ + Enter)">
           <Button size="sm" variant="primary" onClick={() => s.assembleAndLoad()}>
             <Hammer size={14} /> Assemble

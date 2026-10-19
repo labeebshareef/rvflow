@@ -99,6 +99,7 @@ export class Cpu {
     this.mem.clear();
     this.output = "";
     this.halted = undefined;
+    this.haltPending = undefined;
     this.csr.clear();
     // FP and vector units start "initial" so programs can use them without setup (bare tests enable them explicitly).
     this.csr.set(0x300, this.opts.env === "bare" ? 0 : (1 << 13) | (1 << 9));
@@ -286,6 +287,11 @@ export class Cpu {
     return this.csrValue(addr);
   }
 
+  /** CSR value for display, without privilege checks or side effects. */
+  readCsrSilently(addr: number): number {
+    return this.csrValue(addr) >>> 0;
+  }
+
   private csrValue(addr: number): number {
     const ms = this.raw(0x300);
     switch (addr) {
@@ -468,6 +474,7 @@ export class Cpu {
     this.journal = [];
     this.events = [];
     this.wroteMcycle = this.wroteMinstret = false;
+    this.haltPending = undefined;
     const rec: StepRecord = {
       index: this.instret, pc, word: 0, events: this.events, nextPc: pc, priv: this.priv, journal: this.journal, retired: false,
     };

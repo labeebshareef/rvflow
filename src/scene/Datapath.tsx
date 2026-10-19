@@ -5,14 +5,18 @@ import type { Group } from "three";
 import fontUrl from "@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff?url";
 import type { Segment } from "@/anim/choreography";
 import { useSim } from "@/store/sim";
-import { BOARD_BOUNDS, UNITS, WIRES, WIRE_BY_ID, pointAt, type UnitDef, type UnitId, type WireDef, type WireId } from "./layout";
+import {
+  UNITS, WIRES, WIRE_BY_ID, boardBounds, pointAt, visible, type Feature, type UnitDef, type UnitId, type WireDef, type WireId,
+} from "./layout";
 import { SCENE, TONE_COLORS, type SceneTheme } from "./palette";
 
 const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 const DEPTH = 0.45;
 
+type Bounds = ReturnType<typeof boardBounds>;
+
 /** Fit the orthographic camera to the board whenever the canvas resizes. */
-function CameraRig() {
+function CameraRig({ bounds: BOARD_BOUNDS }: { bounds: Bounds }) {
   const { camera, size } = useThree();
   useEffect(() => {
     const bw = BOARD_BOUNDS.maxX - BOARD_BOUNDS.minX;
@@ -23,7 +27,7 @@ function CameraRig() {
     camera.position.set((BOARD_BOUNDS.minX + BOARD_BOUNDS.maxX) / 2, (BOARD_BOUNDS.minY + BOARD_BOUNDS.maxY) / 2 - 9, 26);
     camera.lookAt((BOARD_BOUNDS.minX + BOARD_BOUNDS.maxX) / 2, (BOARD_BOUNDS.minY + BOARD_BOUNDS.maxY) / 2, 0);
     camera.updateProjectionMatrix();
-  }, [camera, size]);
+  }, [camera, size, BOARD_BOUNDS]);
   return null;
 }
 
@@ -34,7 +38,7 @@ function Invalidator() {
   return null;
 }
 
-function Board({ theme }: { theme: SceneTheme }) {
+function Board({ theme, bounds: BOARD_BOUNDS }: { theme: SceneTheme; bounds: Bounds }) {
   const c = SCENE[theme];
   const w = BOARD_BOUNDS.maxX - BOARD_BOUNDS.minX + 1;
   const h = BOARD_BOUNDS.maxY - BOARD_BOUNDS.minY + 1;
@@ -49,7 +53,7 @@ function Board({ theme }: { theme: SceneTheme }) {
       pts.push([[BOARD_BOUNDS.minX, y, -0.01], [BOARD_BOUNDS.maxX, y, -0.01]]);
     }
     return pts;
-  }, []);
+  }, [BOARD_BOUNDS]);
   return (
     <group>
       <mesh position={[cx, cy, -0.06]}>
@@ -200,7 +204,7 @@ function Packets({ seg, theme }: { seg: Segment | undefined; theme: SceneTheme }
   );
 }
 
-function Scene({ theme }: { theme: SceneTheme }) {
+function Scene({ theme, features, bounds }: { theme: SceneTheme; features: Set<Feature>; bounds: Bounds }) {
   const segments = useSim((s) => s.segments);
   const segIndex = useSim((s) => s.segIndex);
   const showControl = useSim((s) => s.showControl);
@@ -214,11 +218,11 @@ function Scene({ theme }: { theme: SceneTheme }) {
     <>
       <ambientLight intensity={theme === "dark" ? 0.75 : 1.1} />
       <directionalLight position={[-6, -10, 20]} intensity={theme === "dark" ? 1.3 : 1.6} />
-      <Board theme={theme} />
-      {WIRES.filter((w) => showControl || !w.control).map((w) => (
+      <Board theme={theme} bounds={bounds} />
+      {visible(WIRES, features).filter((w) => showControl || !w.control).map((w) => (
         <Wire key={w.id} w={w} theme={theme} active={activeWires.has(w.id)} faded={hasSeg && !activeWires.has(w.id)} />
       ))}
-      {UNITS.map((u) => (
+      {visible(UNITS, features).map((u) => (
         <Unit
           key={u.id}
           u={u}
@@ -233,7 +237,8 @@ function Scene({ theme }: { theme: SceneTheme }) {
   );
 }
 
-export default function Datapath({ theme }: { theme: SceneTheme }) {
+export default function Datapath({ theme, features }: { theme: SceneTheme; features: Set<Feature> }) {
+  const bounds = useMemo(() => boardBounds(features), [features]);
   return (
     <Canvas
       orthographic
@@ -245,9 +250,9 @@ export default function Datapath({ theme }: { theme: SceneTheme }) {
       aria-label="Single-cycle datapath"
       style={{ background: SCENE[theme].board }}
     >
-      <CameraRig />
+      <CameraRig bounds={bounds} />
       <Invalidator />
-      <Scene theme={theme} />
+      <Scene theme={theme} features={features} bounds={bounds} />
     </Canvas>
   );
 }

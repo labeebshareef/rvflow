@@ -4,13 +4,23 @@ import { assemble, type AsmError, type Program, type TextEntry } from "@/asm/ass
 import { parseRegister } from "@/isa/registers";
 import type { Radix } from "@/lib/format";
 import { DEFAULT_EXAMPLE, EXAMPLES, type Example } from "@/lessons/examples";
-import { Cpu } from "@/sim/cpu";
+import { formatInstr } from "@/asm/disasm";
+import { DEFAULT_DCACHE, DEFAULT_ICACHE, type CacheConfig } from "@/cache/cache";
+import { DEFAULT_OPTIONS, simulatePipeline, type PipelineRun, type PipeOptions } from "@/pipeline/model";
+import type { Feature } from "@/scene/layout";
+import { Cpu, type Env } from "@/sim/cpu";
+import { parseElf, type ElfImage } from "@/sim/elf";
 import type { StepRecord } from "@/sim/trace";
 import { find } from "@/sim/trace";
+import { featuresOf, pipeStream, programFeatures, textAt } from "./derived";
 
 /** Upper bound on retained history (undo depth) for long runs. */
 const MAX_HISTORY = 20_000;
 const RUN_LIMIT = 200_000;
+/** Instructions simulated ahead for the pipeline view. */
+const PIPE_LIMIT = 2_000;
+
+export type Arch = "single" | "multi" | "pipeline";
 
 export type PlayMode = "segment" | "instruction" | "run";
 
@@ -55,6 +65,18 @@ export interface SimState {
   theme: "dark" | "light";
   status: string | null;
 
+  /** Which implementation is shown: single-cycle, multi-cycle or 5-stage pipeline. */
+  arch: Arch;
+  pipeOptions: PipeOptions;
+  pipeRun: PipelineRun | null;
+  /** Pipeline cycle shown (1-based). */
+  pipeCycle: number;
+  cacheCfgs: [CacheConfig, CacheConfig];
+  /** Optional datapath parts the program needs (FP/vector lane, RVC expander). */
+  features: Set<Feature>;
+  /** Name of the loaded ELF file, when running a binary instead of the editor's source. */
+  elfName: string | null;
+
   setSource(src: string): void;
   loadExample(ex: Example): void;
   assembleAndLoad(): boolean;
@@ -70,6 +92,10 @@ export interface SimState {
   seek(segIndex: number, t?: number): void;
   answerPredict(choice: string): void;
   toggleBreakpoint(line: number): void;
+  setArch(a: Arch): void;
+  setPipeOptions(o: Partial<PipeOptions>): void;
+  seekCycle(c: number): void;
+  loadElf(bytes: Uint8Array, name: string): void;
   set<K extends keyof SimState>(key: K, value: SimState[K]): void;
 }
 
@@ -85,6 +111,50 @@ export function entryAt(addr: number): TextEntry | undefined {
 function sourceFor(rec: StepRecord): string | undefined {
   const e = entryAt(rec.pc);
   return e?.asm;
+}
+
+/** Text for an executed instruction: the listing entry, or a fresh disassembly. */
+function textOf(rec: StepRecord): string {
+  const e = entryAt(rec.pc);
+  if (e) return e.asm;
+  const d = rec.decoded;
+  return d ? (d.compressed ? d.compressed.mnemonic : formatInstr(d.def, d.f, rec.pc)) : "?";
+}
+
+let elfImage: ElfImage | null = null;
+
+function envFor(): { env: Env; misaligned: boolean; tohost?: number } {
+  if (!elfImage) return { env: "rars", misaligned: false };
+  const tohost = elfImage.symbols.get("tohost");
+  return tohost !== undefined ? { env: "bare", misaligned: false, tohost } : { env: "linux", misaligned: true };
+}
+
+/** Listing of an ELF's executable segments, one instruction per line. */
+function elfProgram(img: ElfImage): { program: Program; source: string } {
+  const text: TextEntry[] = [];
+  const lines: string[] = ["# Disassembly of the loaded ELF (read it, step it; edit and Assemble to switch back to source)."];
+  const labels = new Map([...img.symbols].map(([n, a]) => [a, n]));
+  const lineToAddrs = new Map<number, number[]>();
+  const tmp = new Cpu();
+  for (const seg of img.segments) tmp.mem.load(seg.addr, seg.bytes);
+  for (const seg of img.segments.filter((x) => x.exec)) {
+    for (let a = seg.addr; a < seg.addr + seg.bytes.length;) {
+      const lo = tmp.mem.read(a, 2);
+      const size: 2 | 4 = (lo & 3) === 3 ? 4 : 2;
+      const word = size === 4 ? tmp.mem.read(a, 4) : lo;
+      const asm = textAt(tmp.mem, a, labels) ?? `.${size === 4 ? "word" : "half"} 0x${word.toString(16)}`;
+      const label = labels.get(a);
+      if (label) lines.push(`${label}:`);
+      lines.push(`    ${asm.padEnd(34)} # ${a.toString(16).padStart(8, "0")}`);
+      text.push({ addr: a, word, size, line: lines.length, asm });
+      lineToAddrs.set(lines.length, [a]);
+      a += size;
+    }
+  }
+  return {
+    program: { text, textBase: text[0]?.addr ?? 0, textEnd: 0, data: [], dataBase: 0, symbols: img.symbols, entry: img.entry, errors: [], lineToAddrs },
+    source: lines.join("\n") + "\n",
+  };
 }
 
 const reducedMotion = (): boolean =>
@@ -129,6 +199,8 @@ export function decodeShare(code: string): string {
 
 export const useSim = create<SimState>()((set, get) => {
   const bump = () => set((s) => ({ version: s.version + 1 }));
+  /** Executed instructions as the pipeline timing model sees them. */
+  let stream: ReturnType<typeof pipeStream> = [];
 
   /** Execute one instruction and start (or skip) its animation. */
   const execNext = (): boolean => {
@@ -192,31 +264,62 @@ export const useSim = create<SimState>()((set, get) => {
     explainOpen: false,
     theme: initialTheme(),
     status: null,
+    arch: "single",
+    pipeOptions: DEFAULT_OPTIONS,
+    pipeRun: null,
+    pipeCycle: 1,
+    cacheCfgs: [DEFAULT_ICACHE, DEFAULT_DCACHE],
+    features: new Set(),
+    elfName: null,
 
     setSource: (source) => set({ source, exampleId: null }),
 
     loadExample: (ex) => {
-      set({ source: ex.source, exampleId: ex.id, breakpoints: new Set() });
+      elfImage = null;
+      set({ source: ex.source, exampleId: ex.id, breakpoints: new Set(), elfName: null });
       get().assembleAndLoad();
     },
 
+    loadElf: (bytes, name) => {
+      try {
+        elfImage = parseElf(bytes);
+      } catch (e) {
+        set({ status: `Could not load ${name}: ${(e as Error).message}` });
+        return;
+      }
+      const { program, source } = elfProgram(elfImage);
+      textByAddr = new Map(program.text.map((t) => [t.addr, t]));
+      set({ program, source, exampleId: null, errors: [], breakpoints: new Set(), elfName: name, features: programFeatures(program.text) });
+      get().reset();
+      set({ status: `Loaded ${name}: entry ${"0x" + program.entry.toString(16)}, ${envFor().env === "bare" ? "bare-metal (tohost)" : "Linux user-mode"} environment.` });
+    },
+
     assembleAndLoad: () => {
+      if (elfImage && get().elfName && get().source === elfProgram(elfImage).source) {
+        get().reset();
+        return true;
+      }
+      elfImage = null;
+      set({ elfName: null });
       const program = assemble(get().source);
       if (program.errors.length) {
         set({ errors: program.errors, status: `${program.errors.length} assembler error${program.errors.length > 1 ? "s" : ""}` });
         return false;
       }
       textByAddr = new Map(program.text.map((t) => [t.addr, t]));
-      set({ program, errors: [] });
+      set({ program, errors: [], features: featuresOf(program) });
       get().reset();
       return true;
     },
 
     reset: () => {
       const { program, exampleId } = get();
-      cpu.reset(program?.entry ?? 0);
-      if (program) {
-        for (const t of program.text) cpu.mem.write(t.addr, 4, t.word);
+      cpu.reset(program?.entry ?? 0, envFor());
+      if (elfImage) {
+        for (const seg of elfImage.segments) cpu.mem.load(seg.addr, seg.bytes);
+        cpu.textEnd = 0;
+      } else if (program) {
+        for (const t of program.text) cpu.mem.write(t.addr, t.size, t.word);
         cpu.mem.load(program.dataBase, program.data);
         cpu.textEnd = program.textEnd;
       }
@@ -225,12 +328,14 @@ export const useSim = create<SimState>()((set, get) => {
         const n = parseRegister(name);
         if (n) cpu.regs[n] = v;
       }
-      set({ history: [], segments: [], segIndex: 0, segT: 0, playing: false, predict: null, status: null });
+      set({ history: [], segments: [], segIndex: 0, segT: 0, playing: false, predict: null, status: null, pipeRun: null, pipeCycle: 1 });
       bump();
+      if (get().arch === "pipeline") buildPipeline();
     },
 
     stepInstruction: () => {
       const s = get();
+      if (s.arch === "pipeline") return s.seekCycle(s.pipeCycle + 5);
       if (s.predict) return;
       if (!animDone()) {
         // Finish the current instruction's animation first.
@@ -245,6 +350,7 @@ export const useSim = create<SimState>()((set, get) => {
 
     stepSegment: () => {
       const s = get();
+      if (s.arch === "pipeline") return s.seekCycle(s.pipeCycle + 1);
       if (s.predict) return;
       if (animDone()) {
         if (execNext() && !get().skipAnimation) {
@@ -266,6 +372,7 @@ export const useSim = create<SimState>()((set, get) => {
 
     backSegment: () => {
       const s = get();
+      if (s.arch === "pipeline") return s.seekCycle(s.pipeCycle - 1);
       set({ playing: false, predict: null });
       if (s.segT > 0 && s.segT < 1) return set({ segT: 0 });
       if (s.segIndex > 0) return set({ segIndex: s.segIndex - 1, segT: 1 });
@@ -275,6 +382,7 @@ export const useSim = create<SimState>()((set, get) => {
 
     undoInstruction: () => {
       const s = get();
+      if (s.arch === "pipeline") return s.seekCycle(s.pipeCycle - 5);
       const rec = s.history.pop();
       if (!rec) return;
       cpu.undo(rec);
@@ -294,6 +402,11 @@ export const useSim = create<SimState>()((set, get) => {
 
     play: () => {
       const s = get();
+      if (s.arch === "pipeline") {
+        const total = s.pipeRun?.cycles.length ?? 0;
+        if (s.pipeCycle >= total) s.seekCycle(1);
+        return set({ playing: true });
+      }
       if (s.predict) return;
       if (!s.program && !get().assembleAndLoad()) return;
       if (animDone()) {
@@ -315,6 +428,7 @@ export const useSim = create<SimState>()((set, get) => {
     togglePlay: () => (get().playing ? get().pause() : get().play()),
 
     runToEnd: () => {
+      if (get().arch === "pipeline") return get().seekCycle(get().pipeRun?.cycles.length ?? 1);
       if (!get().program && !get().assembleAndLoad()) return;
       const { breakpoints, history } = get();
       let n = 0;
@@ -368,8 +482,59 @@ export const useSim = create<SimState>()((set, get) => {
       set({ breakpoints: bp });
     },
 
+    setArch: (a) => {
+      if (a === get().arch) return;
+      set({ arch: a, playing: false });
+      if (a === "pipeline") buildPipeline();
+      else {
+        set({ pipeRun: null });
+        const last = get().history[get().history.length - 1];
+        const segments = last ? compileTimeline(last, sourceFor(last)) : [];
+        set({ segments, segIndex: Math.max(0, segments.length - 1), segT: segments.length ? 1 : 0 });
+      }
+    },
+
+    setPipeOptions: (o) => {
+      set({ pipeOptions: { ...get().pipeOptions, ...o } });
+      if (get().arch === "pipeline") rerunPipeline();
+    },
+
+    seekCycle: (c) => {
+      const run = get().pipeRun;
+      if (!run || !run.cycles.length) return;
+      const cycle = Math.max(1, Math.min(run.cycles.length, Math.round(c)));
+      syncTo(run.cycles[cycle - 1].retired);
+      set({ pipeCycle: cycle, status: null });
+      bump();
+    },
+
     set: (key, value) => set({ [key]: value } as Partial<SimState>),
   };
+
+  /** Re-execute or undo instructions until exactly `n` have run (the pipeline view's retired count). */
+  function syncTo(n: number): void {
+    const history = get().history;
+    while (history.length > n) cpu.undo(history.pop()!);
+    while (history.length < n && !cpu.halted) history.push(cpu.step());
+    set({ history, segments: [], segIndex: 0, segT: 0 });
+  }
+
+  /** Run the program ahead functionally, then compute the pipeline timing for it. */
+  function buildPipeline(): void {
+    if (!get().program) return;
+    syncTo(0);
+    const history = get().history;
+    while (history.length < PIPE_LIMIT && !cpu.halted) history.push(cpu.step());
+    stream = pipeStream(history, textOf);
+    rerunPipeline();
+  }
+
+  function rerunPipeline(): void {
+    const run = simulatePipeline(stream, (pc) => textAt(cpu.mem, pc), get().pipeOptions);
+    set({ pipeRun: run });
+    const target = Math.min(get().pipeCycle, Math.max(1, run.cycles.length));
+    get().seekCycle(target);
+  }
 });
 
 /** Close the predict prompt after the learner has seen the answer, then continue. */
@@ -381,9 +546,20 @@ export function dismissPredict(): void {
  * Advance the animation clock. Called every animation frame from a single
  * requestAnimationFrame loop (see startClock).
  */
+let cycleClock = 0;
+
 function tick(dtMs: number): void {
   const s = useSim.getState();
   if (!s.playing || s.predict) return;
+  if (s.arch === "pipeline") {
+    cycleClock += dtMs * s.speed;
+    if (cycleClock < 650) return;
+    cycleClock = 0;
+    const total = s.pipeRun?.cycles.length ?? 0;
+    if (s.pipeCycle >= total) return useSim.setState({ playing: false });
+    s.seekCycle(s.pipeCycle + 1);
+    return;
+  }
   const seg = s.segments[s.segIndex];
   if (!seg) {
     useSim.setState({ playing: false });

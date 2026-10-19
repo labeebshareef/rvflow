@@ -74,3 +74,22 @@ describe("playback store", () => {
     expect(useSim.getState().errors[0].line).toBe(1);
   });
 });
+
+describe("pipeline mode", () => {
+  it("times the whole program and keeps the CPU in step with the shown cycle", () => {
+    useSim.getState().setArch("single");
+    useSim.getState().loadExample(ex("hazards"));
+    useSim.getState().setArch("pipeline");
+    const run = useSim.getState().pipeRun!;
+    expect(run.complete).toBe(true);
+    expect(run.stats.instructions).toBe(25);
+    expect(run.stats.loadUseStalls).toBe(1);
+    useSim.getState().seekCycle(run.cycles.length);
+    expect(cpu.output).toBe("126");
+    useSim.getState().seekCycle(1);
+    expect(useSim.getState().history.length).toBe(0);
+    useSim.getState().setPipeOptions({ forwarding: false });
+    expect(useSim.getState().pipeRun!.stats.cycles).toBeGreaterThan(run.stats.cycles);
+    useSim.getState().setArch("single");
+  });
+});

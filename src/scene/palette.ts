@@ -14,6 +14,11 @@ export const FIELD_COLORS: Record<FieldKind, string> = {
   funct7: "#E69F00",
   imm: "#E8743B",
   shamt: "#E8743B",
+  rs3: "#8FA8FF",
+  csr: "#E8743B",
+  rm: "#F0E442",
+  aqrl: "#E69F00",
+  vm: "#C2A5F0",
 };
 
 export const TONE_COLORS: Record<PacketTone, string> = {

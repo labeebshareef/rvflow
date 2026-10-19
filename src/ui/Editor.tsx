@@ -8,11 +8,13 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { BY_MNEMONIC } from "@/isa/instructions";
-import { parseRegister } from "@/isa/registers";
+import { parseFRegister, parseRegister, parseVRegister } from "@/isa/registers";
+import { C_DEFS } from "@/isa/rvc";
 import { PSEUDO_LIST } from "@/asm/assembler";
 import { entryAt, focusAddr, useSim } from "@/store/sim";
 
-const MNEMONICS = new Set([...BY_MNEMONIC.keys(), ...PSEUDO_LIST]);
+const MNEMONICS = new Set([...BY_MNEMONIC.keys(), ...PSEUDO_LIST, ...C_DEFS.map((d) => d.mnemonic)]);
+const isRegister = (w: string) => parseRegister(w) !== undefined || parseFRegister(w) !== undefined || parseVRegister(w) !== undefined;
 
 /** Minimal RISC-V assembly tokenizer for highlighting. */
 const riscv = StreamLanguage.define<{ start: boolean }>({
@@ -32,12 +34,12 @@ const riscv = StreamLanguage.define<{ start: boolean }>({
     const w = stream.match(/^[A-Za-z_.$][\w.$]*/) as RegExpMatchArray | null;
     if (w) {
       const word = w[0].toLowerCase();
-      if (state.start && MNEMONICS.has(word)) {
+      if (state.start && (MNEMONICS.has(word) || MNEMONICS.has(word.replace(/\.(aqrl|aq|rl)$/, "")))) {
         state.start = false;
         return "keyword";
       }
       state.start = false;
-      if (parseRegister(word) !== undefined) return "variableName";
+      if (isRegister(word) || word === "v0.t") return "variableName";
       return "name";
     }
     stream.next();

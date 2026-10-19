@@ -8,7 +8,7 @@ function run(src: string, maxSteps = 10_000): Cpu {
   if (p.errors.length) throw new Error(p.errors.map((e) => `${e.line}: ${e.message}`).join("\n"));
   const cpu = new Cpu();
   cpu.reset(p.entry);
-  for (const t of p.text) cpu.mem.write(t.addr, 4, t.word);
+  for (const t of p.text) cpu.mem.write(t.addr, t.size, t.word);
   cpu.mem.load(p.dataBase, p.data);
   cpu.textEnd = p.textEnd;
   for (let i = 0; i < maxSteps && !cpu.halted; i++) cpu.step();
@@ -199,11 +199,23 @@ describe("environment, traps and undo", () => {
     expect(cpu.halted?.reason).toBe("trap");
   });
 
+  it("starts fresh after a reset that follows an exit", () => {
+    const p = assemble("li a7, 10\necall");
+    const cpu = new Cpu();
+    for (let round = 0; round < 2; round++) {
+      cpu.reset();
+      for (const t of p.text) cpu.mem.write(t.addr, t.size, t.word);
+      cpu.textEnd = p.textEnd;
+      expect(cpu.step().halted).toBeUndefined();
+      expect(cpu.step().halted?.reason).toBe("exit");
+    }
+  });
+
   it("undo restores registers, memory, PC and output exactly", () => {
     const p = assemble("li t0, 5\nsw t0, 0(sp)\nli a0, 3\nli a7, 1\necall\naddi t0, t0, 1");
     const cpu = new Cpu();
     cpu.reset();
-    for (const t of p.text) cpu.mem.write(t.addr, 4, t.word);
+    for (const t of p.text) cpu.mem.write(t.addr, t.size, t.word);
     cpu.textEnd = p.textEnd;
     const before = { regs: cpu.regs.slice(), mem: cpu.mem.readBytes(cpu.regs[2], 4) };
     const recs = [];

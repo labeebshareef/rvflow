@@ -11,7 +11,7 @@ function runExample(src: string, setup: Record<string, number> = {}) {
   expect(p.errors).toEqual([]);
   const cpu = new Cpu();
   cpu.reset(p.entry);
-  for (const t of p.text) cpu.mem.write(t.addr, 4, t.word);
+  for (const t of p.text) cpu.mem.write(t.addr, t.size, t.word);
   cpu.mem.load(p.dataBase, p.data);
   cpu.textEnd = p.textEnd;
   for (const [k, v] of Object.entries(setup)) cpu.regs[parseRegister(k)!] = v;
@@ -57,6 +57,16 @@ describe("choreography", () => {
     expect(out("fib")).toBe("0 1 1 2 3 5 8 13 21 34 55 89 ");
     expect(out("call")).toBe("120");
     expect(out("hello")).toBe("Hello, RISC-V!\n");
+    expect(out("trap")).toBe("40");
+    expect(out("timer")).toBe("3");
+    expect(out("umode")).toBe("0x00000828");
+    expect(out("float")).toBe("0.30000000000000004");
+    expect(out("vadd")).toBe("110");
+    expect(out("vdot")).toBe("120");
+    expect(out("atomics")).toBe("5");
+    expect(out("bits")).toBe("400");
+    expect(out("rvc")).toBe("30");
+    expect(out("hazards")).toBe("126");
   });
 
   it("asks predict questions with the right answers", () => {

@@ -17,6 +17,9 @@ import { Predict } from "@/ui/Predict";
 import { Legend } from "@/ui/Legend";
 import { Help } from "@/ui/Help";
 import { useShortcuts } from "@/ui/useShortcuts";
+import { CacheTab } from "@/ui/CacheTab";
+import { Performance } from "@/ui/Performance";
+import { PipelineCanvas, PipelinePanel } from "@/ui/PipelineView";
 
 const Datapath = lazy(() => import("@/scene/Datapath"));
 
@@ -39,6 +42,8 @@ function Errors() {
 
 export default function App() {
   const theme = useSim((s) => s.theme);
+  const arch = useSim((s) => s.arch);
+  const features = useSim((s) => s.features);
   const [help, setHelp] = useState(false);
   useShortcuts(() => setHelp(true));
 
@@ -72,17 +77,26 @@ export default function App() {
           {/* Datapath, narration and transport */}
           <section aria-label="Datapath" className="order-1 lg:order-2 bg-panel flex flex-col lg:min-h-0">
             <div className="relative h-[62vw] min-h-56 lg:h-auto lg:flex-1 lg:min-h-[24rem]">
-              <Suspense fallback={<div className="absolute inset-0 grid place-items-center text-sm text-muted">Loading datapath…</div>}>
-                <Datapath theme={theme} />
-              </Suspense>
-              <Predict />
-              <Legend />
+              {arch === "pipeline" ? (
+                <PipelineCanvas theme={theme} />
+              ) : (
+                <Suspense fallback={<div className="absolute inset-0 grid place-items-center text-sm text-muted">Loading datapath…</div>}>
+                  <Datapath theme={theme} features={features} />
+                </Suspense>
+              )}
+              {arch !== "pipeline" && <Predict />}
+              {arch !== "pipeline" && <Legend />}
               <p className="absolute top-2 right-3 text-[10px] text-muted pointer-events-none">
-                Single-cycle RV32IM · a classic textbook datapath
+                {arch === "pipeline" ? "Classic 5-stage pipeline (IF ID EX MEM WB)" : arch === "multi" ? "Multi-cycle: one step per clock" : "Single-cycle RV32IMAFDCV"} · a textbook implementation
               </p>
             </div>
             <Narration />
             <Transport />
+            {arch === "pipeline" && (
+              <div className="h-[18rem] border-t border-border">
+                <PipelinePanel />
+              </div>
+            )}
           </section>
 
           {/* State inspectors */}
@@ -93,12 +107,16 @@ export default function App() {
                 <TabsTrigger value="enc">Encoding</TabsTrigger>
                 <TabsTrigger value="mem">Memory</TabsTrigger>
                 <TabsTrigger value="ctrl">Control</TabsTrigger>
+                <TabsTrigger value="cache">Cache</TabsTrigger>
+                <TabsTrigger value="perf">Perf</TabsTrigger>
                 <TabsTrigger value="out">Console</TabsTrigger>
               </TabsList>
               <TabsContent value="regs"><Registers /></TabsContent>
               <TabsContent value="enc"><Encoding /></TabsContent>
               <TabsContent value="mem"><Memory /></TabsContent>
               <TabsContent value="ctrl"><ControlPanel /></TabsContent>
+              <TabsContent value="cache"><CacheTab /></TabsContent>
+              <TabsContent value="perf"><Performance /></TabsContent>
               <TabsContent value="out"><Console /></TabsContent>
             </Tabs>
           </section>

@@ -8,19 +8,23 @@ export function Narration() {
   const seg = s.segments[s.segIndex];
   const rec = currentRecord(s);
   const entry = rec ? entryAt(rec.pc) : undefined;
-  const text = seg ? seg.narration : s.status ?? (s.program ? "Ready. Press play to fetch the first instruction." : "Write or pick a program, then assemble it.");
+  const cyc = s.arch === "pipeline" ? s.pipeRun?.cycles[s.pipeCycle - 1] : undefined;
+  const text = cyc
+    ? cyc.notes.join(" ") || `Cycle ${cyc.cycle}: ${(["IF", "ID", "EX", "MEM", "WB"] as const).map((st) => `${st} ${cyc.stages[st]?.bubble ? "bubble" : cyc.stages[st]?.text ?? "-"}`).join(" · ")}.`
+    : seg ? seg.narration : s.status ?? (s.program ? "Ready. Press play to fetch the first instruction." : "Write or pick a program, then assemble it.");
 
   return (
     <div className="relative border-t border-border bg-panel-2">
       <div className="flex items-start gap-3 px-3 py-2 min-h-14">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 text-[11px] text-muted">
-            {seg && (
+            {cyc && <span className="font-semibold uppercase tracking-wider text-accent">Cycle {cyc.cycle}</span>}
+            {seg && !cyc && (
               <span className="font-semibold uppercase tracking-wider text-accent">
-                {s.segIndex + 1}/{s.segments.length} · {seg.title}
+                {s.arch === "multi" && seg.stage ? `${seg.stage} · ` : ""}{s.segIndex + 1}/{s.segments.length} · {seg.title}
               </span>
             )}
-            {entry && (
+            {entry && !cyc && (
               <span className="font-mono truncate">
                 {entry.asm}
                 {entry.pseudo && <span className="opacity-70"> ← {entry.pseudo.source}</span>}
@@ -38,8 +42,13 @@ export function Narration() {
           >
             {text}
           </p>
+          {cpu.halted && !cyc && s.segIndex >= s.segments.length - 1 && s.segT >= 1 && seg && (
+            <p className={cn("text-sm font-semibold mt-0.5", cpu.halted.reason === "pass" || cpu.halted.reason === "exit" || cpu.halted.reason === "end" ? "text-ok" : "text-danger")}>
+              {cpu.halted.message}
+            </p>
+          )}
         </div>
-        {seg && (
+        {seg && !cyc && (
           <Button size="sm" variant="outline" onClick={() => s.set("explainOpen", !s.explainOpen)} aria-expanded={s.explainOpen}>
             <BookOpen size={14} /> Explain
           </Button>
