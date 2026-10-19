@@ -1,3 +1,5 @@
+import selftest from "./selftest.s?raw";
+
 /** Example programs, ordered as a learning progression. */
 export interface Example {
   id: string;
@@ -224,6 +226,13 @@ main:
 .data
 data: .word 0xCAFEF00D, 0x12345678
 `,
+  },
+  {
+    id: "selftest",
+    chapter: "8 · Testing",
+    title: "Big self-test (47 checks)",
+    blurb: "Exercises every instruction class, memory widths, branches, M corner cases, sorting, recursion and jalr; prints ok/FAIL per check.",
+    source: selftest,
   },
 ];
 
