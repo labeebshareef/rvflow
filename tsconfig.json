@@ -13,7 +13,7 @@
     "skipLibCheck": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "vite.config.ts"]
